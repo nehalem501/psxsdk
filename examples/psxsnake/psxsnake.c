@@ -4,10 +4,12 @@
 
 #include <psx.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 int vmode;
-int speed_counter = 0;
-int screen_old = 0;
+volatile int speed_counter = 0;
+volatile int screen_old = 0;
 
 int snake_array[29][40];
 int scc = 0;
@@ -21,7 +23,7 @@ int l1_pressed = 0;
 
 int level_number = 1;
 int score = 0;
-int seed_counter = 0;
+volatile int seed_counter = 0;
 
 int sample_pos[3]; // 0 = music, 1 = collision, 2 = apple
 
@@ -112,7 +114,6 @@ int pal_or_ntsc_selection()
 {
 	unsigned short padbuf;
 	int x;
-	char stringbuf[64];
 
 	game_drawenv.draw_on_display = 1;
 	x = game_drawenv.y;
@@ -181,7 +182,6 @@ void new_apple()
 
 int main()
 {
-	FILE *f;
 	int c;
 
 // Initialize
@@ -246,7 +246,7 @@ int main()
 	
 	SsVoiceVol(0, 0x3fff, 0x3fff);
 	SsVoiceVol(1, 0x3fff, 0x3fff);
-	SsVoiceVol(2, 0x3fff, 0x3ffff);
+	SsVoiceVol(2, 0x3fff, 0x3fff);
 	
 	SsVoicePitch(0, 0x1000 / (44100 / 11025));
 	SsVoicePitch(1, 0x1000 / (44100 / 11025));

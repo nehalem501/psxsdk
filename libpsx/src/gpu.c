@@ -7,8 +7,10 @@
 #include "font.h"
 #include "costbl.h"
 
-unsigned int *linked_list;
-int linked_list_pos;
+extern volatile int __psxsdk_gpu_dma_finished;
+
+static unsigned int *linked_list;
+static unsigned int linked_list_pos;
 
 int fb_font_x, fb_font_y, fb_font_cx, fb_font_cy;
 
@@ -24,36 +26,60 @@ int fb_font_x, fb_font_y, fb_font_cx, fb_font_cy;
 
 #define get_clutid(cx, cy)			(((cx&0x3ff)>>4)|((cy&0x1ff)<<6))
 
-unsigned int prfont_flags = 0;
-int prfont_scale_x = 0;
-int prfont_scale_y = 0;
+static unsigned int prfont_flags = 0;
+static int prfont_scale_x = 0;
+static int prfont_scale_y = 0;
+static unsigned char prfont_rl = NORMAL_LUMINANCE;
+static unsigned char prfont_gl = NORMAL_LUMINANCE;
+static unsigned char prfont_bl = NORMAL_LUMINANCE;
 
 unsigned short GsScreenW;
 unsigned short GsScreenH;
+unsigned char GsScreenM;
 
 unsigned short GsCurDrawEnvW;
 unsigned short GsCurDrawEnvH;
 
 double gs_vbuf[4][3];
 
+static int __gs_autowait = 0;
+
 unsigned int PRFONT_SCALEX(int i)
 {
 	prfont_scale_x = i;
-	return 0;
+	return PRFONT_SCALE;
 }
 
 unsigned int PRFONT_SCALEY(int i)
 {
 	prfont_scale_y = i;
-	return 0;
+	return PRFONT_SCALE;
+}
+
+unsigned int PRFONT_RL(unsigned char f)
+{
+	prfont_rl = f;
+	return PRFONT_COLOR;
+}
+
+unsigned int PRFONT_GL(unsigned char f)
+{
+	prfont_gl = f;
+	return PRFONT_COLOR;
+}
+
+unsigned int PRFONT_BL(unsigned char f)
+{
+	prfont_bl = f;
+	return PRFONT_COLOR;
 }
 
 unsigned int draw_mode_packet;
 
 unsigned int setup_attribs(unsigned char tpage, unsigned int attribute, unsigned char *packet);
-void gs_internal_vector_rotate(int x_a, int y_a, int z_a, double *v, double *n);
+static void gs_internal_vector_rotate(int x_a, int y_a, int z_a, double *v, double *n);
 
-unsigned char gpu_stringbuf[512];
+static char gpu_stringbuf[512];
 
 int gs_calculate_scaled_size(int size, int scale)
 {
@@ -77,14 +103,21 @@ void GsSetList(unsigned int *listptr)
 
 void GsDrawList()
 {
-	int x = 0;
+	if(PSX_GetInitFlags() & PSX_INIT_NOBIOS)
+	{
+// DMA is unreliable right now, use PIO.
+		GsDrawListPIO();
+		return;
+	}
+	
+	//int x = 0;
 
 	/* Put a terminator, so the link listed ends. */
 	linked_list[linked_list_pos] = 0x00ffffff;
 
 //	do{printf("linked_list[%d] = %08x\n", x, linked_list[x]);}while(linked_list[x++]!=0xffffff);
 
-	#warning "Let's hope this works well."
+	//#warning "Let's hope this works well."
 
 	while(!(GPU_CONTROL_PORT & (1<<0x1a))); /* Wait for the GPU to finish
 						 * drawing primitives. */
@@ -96,8 +129,47 @@ void GsDrawList()
 	D2_CHCR = (1<<0xa)|1|(1<<0x18);
 	
 	linked_list_pos = 0;
+	
+	//if(PSX_GetInitFlags() & PSX_INIT_NOBIOS)
+	//	__psxsdk_gpu_dma_finished = 0;
+
+	if(__gs_autowait)
+		while(GsIsDrawing());
 }
 
+void GsDrawListPIO()
+{
+	//linked_list[linked_list_pos] = 0x00ffffff;
+	int pos = 0;
+	int sz = 0;
+	int x;
+	
+	while(!(GPU_CONTROL_PORT & (1<<0x1c)));
+	// Disable DMA
+	GPU_CONTROL_PORT = 0x04000000;
+	
+	
+	while(pos < linked_list_pos)
+	{
+		while(!(GPU_CONTROL_PORT & (1<<0x1c)));
+
+		GPU_DATA_PORT = 0x01000000; // Reset data port
+		
+		sz = linked_list[pos++] >> 24;
+		
+		for(x = 0; x < sz; x++)
+			GPU_DATA_PORT = linked_list[pos++];
+	}
+	
+	linked_list_pos = 0;
+//	GPU_DATA_PORT = 0xE6000000; // Disable masking stuff
+//	gpu_data_ctrl(2, ((b&0xff)<<16)|((g&0xff)<<8)|r);
+//	GPU_DATA_PORT = (y<<16)|x;
+//	GPU_DATA_PORT = (h<<16)|w;
+	if(__gs_autowait)
+		while(GsIsDrawing());
+}
+	
 void GsSortPoly3(GsPoly3 *poly3)
 {
 	int orig_pos = linked_list_pos;
@@ -216,6 +288,7 @@ void GsSortGLine(GsGLine *line)
 	
 	linked_list[linked_list_pos++] = 0x05000000;
 	linked_list[linked_list_pos++] = md;
+	
 	for(x=0;x<2;x++)
 	{
 		linked_list[linked_list_pos++] = (line->b[x]<<16)|(line->g[x]<<8)|(line->r[x])|((x == 0)?(pkt<<24):0);
@@ -230,7 +303,6 @@ void GsSortDot(GsDot *dot)
 	// PKT 0x68
 
 	int orig_pos = linked_list_pos;
-	int x;
 	unsigned char pkt = 0x68;
 	unsigned int md;
 	
@@ -483,8 +555,11 @@ void GsSortTPoly3(GsTPoly3 *tpoly3)
 				linked_list[linked_list_pos++] |=
 					md << 16;
 			break;
+			default:
+				linked_list_pos++;
+			break;
 		}
-	}		
+	}
 	
 	linked_list[orig_pos] |= ((unsigned int)&linked_list[linked_list_pos]) & 0xffffff;
 }
@@ -545,7 +620,7 @@ void LoadImage(void *img, int x, int y, int w, int h)
 {
 	GPU_dw(x, y, w, h, img);
 	
-	/*int l;
+	int l;
 	
 	printf("LoadImage: %d, %d, %d, %d\n", x, y, w, h);
 	
@@ -562,7 +637,7 @@ void LoadImage(void *img, int x, int y, int w, int h)
 	
 	// Wait for DMA to finish
 	
-	while(D2_CHCR & (1<<0x18));*/
+	while(D2_CHCR & (1<<0x18));
 //}*/
 
 void GsSetDrawEnv(GsDrawEnv *drawenv)
@@ -587,7 +662,7 @@ void GsSetDrawEnv(GsDrawEnv *drawenv)
 	
 	gpu_data_ctrl(0xe4, (end_y<<10)|end_x);
 	
-	#warning "Check drawing offset better."
+	//#warning "Check drawing offset better."
 	gpu_data_ctrl(0xe5, (drawenv->y<<11)|drawenv->x);
 	//gpu_data_ctrl(0xe5, 0);
 	
@@ -630,7 +705,6 @@ void gpu_data_ctrl(unsigned int command, unsigned int param)
 
 unsigned int setup_attribs(unsigned char tpage, unsigned int attribute, unsigned char *packet)
 {
-	unsigned int orig_pos = linked_list_pos;
 	unsigned int sprite_mode_packet;
 
 	//printf("tpage = %d, attribute = %x, packet = %x\n", tpage, attribute, packet);
@@ -661,8 +735,6 @@ unsigned int GsListPos()
 	return linked_list_pos;
 }
 
-	
-	
 void GsEnableDisplay(int enable)
 {
 	gpu_ctrl(3, enable ? 0 : 1);
@@ -673,7 +745,7 @@ void GsReset()
 	gpu_ctrl(0, 0); // Reset GPU
 }
 
-void GsInit()
+void GsInitEx(unsigned int flags)
 {
 	//gpu_ctrl(0, 0); // Reset GPU
 	GsReset(); // Reset GPU
@@ -683,9 +755,17 @@ void GsInit()
 	
 	//gpu_ctrl(3, 1); // Disable display
 	GsEnableDisplay(0); // Disable display
+	
+	GPU_DATA_PORT = 0x01000000; // Reset data port
+	
 	/*gpu_ctrl(6, 0xc40240); // Horizontal start end
 	gpu_ctrl(7, 0x049025); // Vertical start end*/
 	//DrawFBRect(0, 0, 1023, 511, 0, 0, 0);
+}
+
+void GsInit()
+{
+	GsInitEx(0);
 }
 
 /*void SetVBlankHandler2(void *(callback)())
@@ -784,6 +864,7 @@ int GsSetVideoModeEx(int width, int height, int video_mode, int rgb24,
 	
 	GsScreenW = width;
 	GsScreenH = height;
+	GsScreenM = video_mode;
 	
 	return 1;
 }
@@ -869,7 +950,7 @@ int GsImageFromTim(GsImage *image, void *timdata)
 	return 1;
 }
 
-int GsUploadImage(GsImage *image)
+void GsUploadImage(GsImage *image)
 {
 	if(image->has_clut)
 		LoadImage(image->clut_data, image->clut_x, image->clut_y,
@@ -915,7 +996,7 @@ int GsSpriteFromImage(GsSprite *sprite, GsImage *image, int do_upload)
 	
 	sprite->h = image->h;
 	sprite->attribute = COLORMODE(image->pmode);
-	sprite->r = sprite->g = sprite->b = NORMAL_LUMINOSITY;
+	sprite->r = sprite->g = sprite->b = NORMAL_LUMINANCE;
 	
 	return 1;
 }
@@ -927,10 +1008,18 @@ void GsSetMasking(unsigned char flag)
 
 int GsIsDrawing()
 {
-	if (!(GPU_CONTROL_PORT & (1<<0x1a)))
-		return 1;
-	else
-		return 0;
+	/*int x;
+	
+	if(PSX_GetInitFlags() & PSX_INIT_NOBIOS)
+	{
+		int r = (!(GPU_CONTROL_PORT & (1<<0x1a))) || (!__psxsdk_gpu_dma_finished);
+		
+		for(x = 0; x < 1000; x++);
+		
+		return r;
+	}*/
+	
+	return !(GPU_CONTROL_PORT & (1<<0x1a)) ;
 }
 
 
@@ -1006,7 +1095,9 @@ unsigned int GsPrintFont_Draw(int x, int y, int scalex, int scaley)
 	
 	spr.x = x;
 	spr.y = y;
-	spr.r = spr.g = spr.b = NORMAL_LUMINOSITY;
+	spr.r = prfont_rl;
+	spr.g = prfont_gl;
+	spr.b = prfont_bl;
 	spr.attribute = 0;
 	spr.cx = fb_font_cx;
 	spr.cy = fb_font_cy;
@@ -1024,7 +1115,7 @@ unsigned int GsPrintFont_Draw(int x, int y, int scalex, int scaley)
 		{
 			if(spr.x >= GsScreenW)
 			{
-				spr.x = 0;
+				spr.x = spr.x - GsScreenW;
 				spr.y += fh;
 			}
 		}
@@ -1033,20 +1124,31 @@ unsigned int GsPrintFont_Draw(int x, int y, int scalex, int scaley)
 		{
 			spr.u = ((fb_font_x & 0x3f)*4)+((*string & 7) << 3);
 			spr.v = (fb_font_y & 0xff)+(*string & 0xf8);
+
+			if((spr.x < GsCurDrawEnvW && (spr.x+fw)>=0) &&
+			   (spr.y < GsCurDrawEnvH && (spr.y+fh)>=0))
+			{
 			
-			if((scalex == 0 || scalex == 1) && (scaley == 0 || scaley == 1))
-				GsSortSimpleSprite(&spr);
-			else
-				GsSortSprite(&spr);
+				if((scalex == 0 || scalex == 1) && (scaley == 0 || scaley == 1))
+					GsSortSimpleSprite(&spr);
+				else
+					GsSortSprite(&spr);
+			}
 			
 			spr.x += fw;
 		}
 		
+		if(*string == '\r')
+			spr.x = 0;
+		
 		if(*string == '\n')
 		{
-			spr.x = x;
+			spr.x = (prfont_flags & PRFONT_UNIXLF)? 0 : x;
 			spr.y += fh;
 		}
+
+		if(*string == '\t')
+			spr.x += fw * 8;
 		
 		string++;
 	}
@@ -1054,26 +1156,36 @@ unsigned int GsPrintFont_Draw(int x, int y, int scalex, int scaley)
 	return (spr.y << 16) | spr.x;
 }
 
-unsigned int GsPrintFont(int x, int y, char *fmt, ...)
+unsigned int GsVPrintFont(int x, int y, const char *fmt, va_list ap)
 {
 	int r;
-	GsSprite spr;
-	char *string;
-	va_list ap;
+	//GsSprite spr;
+	//char *string;
 	int fw = gs_calculate_scaled_size(8, prfont_scale_x);
-
-	va_start(ap, fmt);
 
 	r = vsnprintf(gpu_stringbuf, 512, fmt, ap);
 	
 	if(prfont_flags & PRFONT_WRAP)
 		r = GsPrintFont_Draw(x, y, prfont_scale_x, prfont_scale_y);
 	else if(prfont_flags & PRFONT_CENTER)
-		r = GsPrintFont_Draw(x - (r * (fw/2)), y, prfont_scale_x, prfont_scale_y);
+		r = GsPrintFont_Draw(x - ((r * fw)/2), y, prfont_scale_x, prfont_scale_y);
 	else if(prfont_flags & PRFONT_RIGHT)
 		r = GsPrintFont_Draw(x - (r * fw), y, prfont_scale_x, prfont_scale_y);
 	else
 		r = GsPrintFont_Draw(x, y, prfont_scale_x, prfont_scale_y);
+	
+	return r;
+}
+
+unsigned int GsPrintFont(int x, int y, const char *fmt, ...)
+{
+	int r;
+	
+	va_list ap;
+	
+	va_start(ap, fmt);
+
+	r = GsVPrintFont(x, y, fmt, ap);
 
 	va_end(ap);
 	
@@ -1082,10 +1194,17 @@ unsigned int GsPrintFont(int x, int y, char *fmt, ...)
 
 void GsSetFont(int fb_x, int fb_y, int cx, int cy)
 {
-	fb_font_x = fb_x;
-	fb_font_y = fb_y;
-	fb_font_cx = cx;
-	fb_font_cy = cy;
+	if(fb_x != -1)
+		fb_font_x = fb_x;
+
+	if(fb_y != -1)
+		fb_font_y = fb_y;
+
+	if(fb_font_cx != -1)
+		fb_font_cx = cx;
+
+	if(fb_font_cy != -1)
+		fb_font_cy = cy;
 }
 
 void GsSetFontAttrib(unsigned int flags)
@@ -1096,10 +1215,14 @@ void GsSetFontAttrib(unsigned int flags)
 	{
 		PRFONT_SCALEX(0);
 		PRFONT_SCALEY(0);
+
+		PRFONT_RL(NORMAL_LUMINANCE);
+		PRFONT_GL(NORMAL_LUMINANCE);
+		PRFONT_BL(NORMAL_LUMINANCE);
 	}
 }
 
-double gs_internal_cos(int a)
+static double gs_internal_cos(int a)
 {
 	int a_a = (a>>12)-(((a>>12)/360)*360);
 
@@ -1115,7 +1238,7 @@ double gs_internal_cos(int a)
 	return 0;
 }
 
-double gs_internal_sin(int a)
+static double gs_internal_sin(int a)
 {
 	int a_a = (a>>12)-(((a>>12)/360)*360);
 
@@ -1131,13 +1254,8 @@ double gs_internal_sin(int a)
 	return 0;
 }
 
-void gs_internal_vector_rotate(int x_a, int y_a, int z_a, double *v, double *n)
+static void gs_internal_vector_rotate(int x_a, int y_a, int z_a, double *v, double *n)
 {
-// This function can rotate a vector about the X, Y and Z axes
-// If you don't want to rotate a vector about an axis, pass 0 as angle to that axis
-// It is correct to pass the same argument to v and n, as calculations are first done in an internal buffer
-// and then stored in the output array
-
 	double axis_m[3][3];
 	double b[3];
 	double k[3], s[3];
@@ -1191,3 +1309,211 @@ void GsSortCls(int r, int g, int b)
 	GsSortRectangle(&rect);
 }
 
+void GsSetAutoWait()
+{
+	__gs_autowait = 1;
+}
+
+void GsRotateVector(int x_a, int y_a, int z_a, double *v, double *n)
+{
+	gs_internal_vector_rotate(x_a, y_a, z_a, v, n);	
+}
+
+/*void GsSortSimpleMap(GsMap *map)
+{
+	unsigned int orig_pos = linked_list_pos;
+	//unsigned int 
+	unsigned char pkt = 0x64;
+	unsigned int md;
+	unsigned char curCount = 0;
+	unsigned int remaining;
+	unsigned int tn;
+	unsigned short tu;
+	unsigned short tv;
+	int x, y;
+
+	md = setup_attribs(map->tpage, map->attribute, &pkt);
+
+	linked_list[linked_list_pos++] = 0x01000000;
+	linked_list[linked_list_pos++] = md;
+	linked_list[orig_pos] |= ((unsigned int)&linked_list[linked_list_pos]) & 0xffffff;
+
+	orig_pos = linked_list_pos;
+	linked_list[linked_list_pos++] = 0x00000000;
+	
+	remaining = map->w * map->h;
+	
+	for(y = 0; y < map->h; y++)
+	{
+		for(x = 0; x < map->w; x++)
+		{
+			switch(map->tsize)
+			{
+				case 1:
+					tn = ((unsigned char*)map->data)[(y * map->l) + x];
+				break;
+				case 2:
+					tn = ((unsigned short*)map->data)[(y * map->l) + x];
+				break;
+				case 4:
+					tn = ((unsigned int*)map->data)[(y * map->l) + x];
+				break;
+			}
+			
+			tn &= ~map->tmask;
+			
+			tu = (tn * map->tw) % map->tmw;
+			tv = ((tn * map->tw) / map->tmw) * map->th;
+			
+			linked_list[linked_list_pos++] = (pkt<<24)|(map->b<<16)|(map->g<<8)|map->r;
+			linked_list[linked_list_pos++] = (((map->y+(y*map->th))&0x7ff)<<16)|((map->x+(x*map->tw))&0x7ff);
+			linked_list[linked_list_pos++] = (get_clutid(map->cx,map->cy)<<16)|((tv+map->v)<<8)|
+				(tu+map->u);
+			linked_list[linked_list_pos++] = (map->th<<16)|map->tw;
+			
+			curCount++;
+			
+			if(curCount == 252)
+			{
+				linked_list[orig_pos] = (252 << 24) | (((unsigned int)&linked_list[linked_list_pos]) & 0xffffff);
+				orig_pos = linked_list_pos;
+				
+				remaining -= curCount;
+				
+				if(remaining > 0)
+					linked_list_pos++;
+				
+				curCount = 0;
+			}
+		}
+	}
+	
+	if(curCount > 0)
+		linked_list[orig_pos] = (curCount << 24) | (((unsigned int)&linked_list[linked_list_pos]) & 0xffffff);
+}*/
+
+void GsSetListEx(unsigned int *listptr, unsigned int listpos)
+{
+	linked_list = listptr;
+	linked_list_pos = listpos;
+}
+
+void GsSortPolyLine(GsPolyLine *line)
+{
+	// PKT 0x48
+	
+	int orig_pos = linked_list_pos;
+	int x;
+	unsigned char pkt = 0x48;
+	unsigned int md;
+	
+	md = setup_attribs(0, line->attribute, &pkt);	
+	
+	linked_list_pos++; // skip this word, we will replace it later
+	linked_list[linked_list_pos++] = md;
+	linked_list[linked_list_pos++] = (pkt<<24)|(line->b<<16)|(line->g<<8)|(line->r);
+	
+	for(x = 0; x < line->npoints; x++)
+		linked_list[linked_list_pos++] = ((line->y[x]&0x7ff)<<16)|(line->x[x]&0x7ff);
+	
+	linked_list[linked_list_pos++] = 0x55555555; // termination code
+	
+	linked_list[orig_pos] = ((line->npoints+3) << 24) | (((unsigned int)&linked_list[linked_list_pos]) & 0xffffff);
+}
+
+void GsSortGPolyLine(GsGPolyLine *line)
+{
+	// PKT 0x58
+
+	int orig_pos = linked_list_pos;
+	int x;
+	unsigned char pkt = 0x58;
+	unsigned int md;
+	
+	md = setup_attribs(0, line->attribute, &pkt);	
+	
+	linked_list_pos++; // skip this word, we will replace it later
+	linked_list[linked_list_pos++] = md;
+	
+	for(x=0; x < line->npoints;x++)
+	{
+		linked_list[linked_list_pos++] = (line->b[x]<<16)|(line->g[x]<<8)|(line->r[x])|((x == 0)?(pkt<<24):0);
+		linked_list[linked_list_pos++] = ((line->y[x]&0x7ff)<<16)|(line->x[x] & 0x7ff);
+	}
+	
+	linked_list[linked_list_pos++] = 0x55555555; // termination code
+	
+	linked_list[orig_pos] = (((line->npoints*2)+2) << 24) | (((unsigned int)&linked_list[linked_list_pos]) & 0xffffff);
+}
+
+void GsSortGTPoly4(GsGTPoly4 *tpoly4)
+{
+	unsigned int orig_pos = linked_list_pos;
+	unsigned char pkt = 0x3c;
+	unsigned int md;
+	
+	/*md = setup_attribs(tpoly4->tpage, tpoly4->attribute, &pkt);*/
+	
+	//printf("tpoly4->tpage = %d\n", tpoly4->tpage);
+	
+	md = setup_attribs(tpoly4->tpage, tpoly4->attribute, &pkt);
+
+	//printf("pkt = %x\n", pkt);
+
+	linked_list[linked_list_pos++] = 0x0C000000;
+	//linked_list[linked_list_pos++] = md;
+	//linked_list[linked_list_pos++] = 0xe0000000;
+	//linked_list[linked_list_pos++] = 0xe1000105;
+	
+	//printf("tpoly4 md: %08x\n", md);
+	linked_list[linked_list_pos++] = (pkt<<24)|(tpoly4->b[0]<<16)|(tpoly4->g[0]<<8)|(tpoly4->r[0]);
+	linked_list[linked_list_pos++] = ((tpoly4->y[0]&0x7ff)<<16)|(tpoly4->x[0]&0x7ff);
+	linked_list[linked_list_pos++] = (get_clutid(tpoly4->cx, tpoly4->cy)<<16)|(tpoly4->v[0]<<8)|tpoly4->u[0];
+	linked_list[linked_list_pos++] = (tpoly4->b[1]<<16)|(tpoly4->g[1]<<8)|tpoly4->r[1];
+	linked_list[linked_list_pos++] = ((tpoly4->y[1]&0x7ff)<<16)|(tpoly4->x[1]&0x7ff);
+	linked_list[linked_list_pos++] = (md << 16)|(tpoly4->v[1]<<8)|tpoly4->u[1];
+	linked_list[linked_list_pos++] = (tpoly4->b[1]<<16)|(tpoly4->g[1]<<8)|tpoly4->r[1];
+	linked_list[linked_list_pos++] = ((tpoly4->y[2]&0x7ff)<<16)|(tpoly4->x[2]&0x7ff);
+	linked_list[linked_list_pos++] = (tpoly4->v[2]<<8)|tpoly4->u[2];
+	linked_list[linked_list_pos++] = (tpoly4->b[2]<<16)|(tpoly4->g[2]<<8)|tpoly4->r[2];
+	linked_list[linked_list_pos++] = ((tpoly4->y[3]&0x7ff)<<16)|(tpoly4->x[3]&0x7ff);
+	linked_list[linked_list_pos++] = (tpoly4->v[3]<<8)|tpoly4->u[3];
+	
+	linked_list[orig_pos] |= ((unsigned int)&linked_list[linked_list_pos]) & 0xffffff;
+}
+
+void GsSortGTPoly3(GsGTPoly3 *tpoly3)
+{
+	int orig_pos = linked_list_pos;
+	int x;
+	unsigned char pkt = 0x34;
+	unsigned int md;
+	
+	md = setup_attribs(tpoly3->tpage, tpoly3->attribute, &pkt);
+	
+	linked_list[linked_list_pos++] = 0x09000000;
+	
+	for(x = 0; x < 3; x++)
+	{
+		linked_list[linked_list_pos++] =
+			((x==0)?(pkt<<24):0)|(tpoly3->b[x]<<16)|(tpoly3->g[x]<<8)|(tpoly3->r[x]);
+		linked_list[linked_list_pos++] = ((tpoly3->y[x]&0x7ff)<<16)|(tpoly3->x[x]&0x7ff);
+		linked_list[linked_list_pos] = (tpoly3->u[x]<<8)|tpoly3->v[x];
+		
+		switch(x)
+		{
+			case 0:
+				linked_list[linked_list_pos++] |= 
+					get_clutid(tpoly3->cx, tpoly3->cy) << 16;
+			break;
+			case 1:
+				linked_list[linked_list_pos++] |=
+					md << 16;
+			break;
+			default:
+				linked_list_pos++;
+		}
+	}		
+	
+	linked_list[orig_pos] |= ((unsigned int)&linked_list[linked_list_pos]) & 0xffffff;
+}

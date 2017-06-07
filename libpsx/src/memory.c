@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern int __bss_start[];
 extern int __bss_end[];
@@ -25,7 +26,7 @@ void malloc_setup()
 {
 	int x;
 
-	printf("malloc setup.\n");
+	dprintf("malloc setup.\n");
 
 	first_free_page = (unsigned int) __bss_end;
 	first_free_page-= 0x80000000;
@@ -50,9 +51,11 @@ void malloc_setup()
 	}
 }
 
-void *malloc(int size)
+void *malloc(size_t size)
 {
-	int x, y, z;
+	dprintf("malloc(%d)\n", size);
+
+	int x, y;
 	
 // Round size
 
@@ -97,7 +100,7 @@ malloc_keep_finding:
 	return NULL;
 }
 
-void *calloc(int number, int size)
+void *calloc(size_t number, size_t size)
 {
 	void *ptr = malloc(number * size);
 	unsigned char *cptr = (unsigned char*)ptr;
@@ -114,6 +117,8 @@ void *calloc(int number, int size)
 
 void free(void *ptr)
 {
+	dprintf("free(%x)\n", (unsigned int)ptr);
+
 	unsigned int ptri = (unsigned int)ptr;
 	ptri -= 0x80000000;
 	int x;
@@ -142,7 +147,7 @@ void free(void *ptr)
 
 	for(x = 0; x < alloc_size[ptri]; x++)
 	{
-		printf("ptri + x = %d\n", ptri + x);
+		dprintf("ptri + x = %d\n", ptri + x);
 		busy_pages[ptri + x] = 0;
 	}
 
@@ -153,4 +158,58 @@ void free(void *ptr)
 	/*for(x=150;x<170;x++)
 		printf("%d: %d, %d\n", x, busy_pages[x], alloc_size[x]);*/
 }
-																																															
+
+void *realloc(void *ptr, size_t size)
+{
+	unsigned int ptri = (unsigned int)ptr;
+	int x;
+	void *newptr;
+	
+	if(ptr == NULL)
+		return malloc(size);
+	
+	ptri -= 0x80000000;
+	
+	size |= 0x3ff;
+	size++;
+	
+	size>>=10;
+	
+	if((ptri & 0x3ff) || (busy_pages[ptri>>10] == 0) || (alloc_size[ptri>>10] == 0))
+	{
+		// If the pointer address is not a multiplier of 1K, or the page
+		// is free, it means that memory not allocated by malloc() was passed to realloc.
+		// Print a warning message and return.
+		
+		printf("** realloc() ** : tried to reallocate memory with invalid pointer at %x\n",
+			ptri + 0x80000000);
+			
+		return NULL;	
+	}
+
+// Get page
+	
+	ptri>>=10;
+
+	if(size < alloc_size[ptri]) // New size smaller than old size
+	{
+		for(x = size; x < alloc_size[ptri]; x++)
+			busy_pages[ptri + x] = 0;
+	
+		alloc_size[ptri] = size;
+	}
+	else if(size > alloc_size[ptri]) // New size bigger than old size
+	{
+		newptr = malloc(size * 1024);
+		
+		if(newptr == NULL)
+			return NULL;
+		
+		memcpy(newptr, ptr, alloc_size[ptri]);
+		free(ptr);
+		
+		ptr = newptr;
+	}
+	
+	return ptr;
+}

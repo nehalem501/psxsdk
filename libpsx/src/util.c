@@ -13,7 +13,7 @@ const char *psxsdk_btn_names[] =
 								 "Square", "Select", "Res1", "Res2", "Start",
 								 "Up", "Right", "Down", "Left"};
 								 
-void *PSX_GetButtonName(unsigned short button, unsigned char *out, unsigned int out_len)
+char *PSX_GetButtonName(unsigned short button, char *out, unsigned int out_len)
 {
 	int x;
 	
@@ -37,4 +37,6 @@ void *PSX_GetButtonName(unsigned short button, unsigned char *out, unsigned int 
 	}
 	else
 		strncpy(out, "None", out_len);
+	
+	return out;
 }

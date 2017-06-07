@@ -1,4 +1,4 @@
-const unsigned short modplay_pitch_per_tbl[] = {
+const unsigned short modplay_pitch_per_tbl[120] = {
 1712, 194,
 1616, 205,
 1525, 217,

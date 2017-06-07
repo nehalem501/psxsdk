@@ -1,3 +1,8 @@
+PSXSDK 0.6
+ReadMe and FAQ
+Last updated: June 3rd 2016
+-----------------------------
+
 What is PSXSDK?
 
 PSXSDK is an unofficial and homebrewed software development kit for the Sony PlayStation(TM).
@@ -53,7 +58,7 @@ This trick might also work on early Japanese consoles but I'm not sure of that.
 Q: How do I get started?
 
 A: In most cases, you will simply need one of the precompiled toolchains tarballs which you can find
-on the PSXSDK website (http://tails92.sepwich.com/psxsdk). Extract them so that the PSXSDK can
+on the PSXSDK website (http://unhaut.fav.cc/psxsdk). Extract them so that the PSXSDK can
 be found at /usr/local/psxsdk and you're ready.
 
 If you want to do it the hard way, there is no precompiled tarball for your operating system or
@@ -97,6 +102,8 @@ mkisofs -o test.iso -V TEST -sysid PLAYSTATION cd_root
 Then you will have to use mkpsxiso to convert the ISO image to a format the PlayStation understands
 and to license it. mkpsxiso outputs a .BIN/.CUE pair, which is supported by most CD burning
 applications.
+NOTE: Some Linux distributions (like Debian and Mint) don't provide mkisofs, but genisoimage instead.
+           Replace the command name in the command line and that's it.
 
 mkpsxiso test.iso test.bin /usr/local/psxsdk/misc/infousa.dat
 
@@ -113,6 +120,7 @@ Q: Are there any examples which show how to use the PSXSDK library?
 
 A: Yes. Download the examples archive from the PSXSDK website and compile the examples in it.
 In this way you can also test that your PSXSDK compiler is working correctly.
+You can build them all by running ``make build_examples''
 
 Q: What does PSXSDK support?
 
@@ -170,58 +178,109 @@ This happens due to the initialization routines of the CDROM subsystem. Hopefull
 Q: How can I change the writing and the logo at the "Licensed by Sony" PlayStation bootscreen?
 
 A: That information is contained inside the license file that you use to license the CD-ROM image that you burn.
-    Thus, to modify the information you must use the "lictool" program included in the PSXSDK tools.
-    lictool modifies various information contained in the license file such as the writing, the logo, etc.
+Thus, to modify the information you must use the "lictool" program included in the PSXSDK tools.
+lictool modifies various information contained in the license file such as the writing, the logo, etc.
     
-    For example, to output a new modified American license file which uses your logo contained in new.tmd:
+For example, to output a new modified American license file which uses your logo contained in new.tmd:
     
-    lictool /usr/local/psxsdk/share/licenses/infousa.dat my_new_license_file.dat -tmd=new.tmd
+lictool /usr/local/psxsdk/share/licenses/infousa.dat my_new_license_file.dat -tmd=new.tmd
     
-    Remember to use my_new_license_file.dat when you use mkpsxiso, otherwise you will use the standard
-    American license file, and your new logo won't appear!
+Remember to use my_new_license_file.dat when you use mkpsxiso, otherwise you will use the standard
+American license file, and your new logo won't appear!
     
-    Logos are in TMD format, the format for 3D models in Sony's original development kit.
+Logos are in TMD format, the format for 3D models in Sony's original development kit.
     
 Q: My music module sounds wrong or weird when I play it with libmodplay
 
 A: Most music module formats have a lot of built-in effects, which are often poorly documented,
-    very complex to implement and which are often thought for personal computer hardware which is less
-    limited than the PlayStation SPU in some aspects. Luckily most modules don't really use them
-    or sound quite right when those effects are not implemented.
+very complex to implement and which are often thought for personal computer hardware which is less
+limited than the PlayStation SPU in some aspects. Luckily most modules don't really use them
+or sound quite right when those effects are not implemented.
 
 Q: I heard that it is possible to make the PlayStation read CD-RW discs (CD-rewritable). Is this true?
 
-A: Yes, it is true. But it is only really usable if you want to do hardware programming tests, as the amount
-    that the CD drive of your PlayStation will be able to read will be around 128-150 kilobytes. You will
-    not be able to read original PlayStation games or CD-Rs, and if you try to do it, your laser pickup will
-    get stuck and you will have to unblock it by unscrewing it and sliding it with your hands...
-    
-    To read CD-RWs on later model PlayStation/cd drives you have to tune the potentiometer on the CD drive
-    from its original position to 12-13 hours. It actually sort of looks like a clock. Remember the original
-    position to not ruin anything. Use a precision screwdriver to tune the potentiometer.
-    This will stress the laser in the CD drive more than it is in normal operation, and it will shorten its life.
-    
-    This is my (Giuseppe Gatta's) experience, and it might work much better on your PlayStation/PS cd drive
-    or it might work much worse. PlayStation cd drives are very finicky, I myself have PlayStations which read
-    like new and some which almost do not read at all. The CD drive is the lowest quality item inside
-    a PlayStation.
+A: Yes, it is. But it is only really usable if you want to do hardware programming tests, as the amount
+that the CD drive of your PlayStation may be able to read might be around 128-150 kilobytes. You will
+not be able to read original PlayStation games or CD-Rs, and if you try to do it, your laser pickup might
+get stuck and you may have to unblock it by unscrewing it and sliding it with your hands...
+With a relatively good laser and very good tuning you might be even able to play full fledged games.
+
+To read CD-RWs on later model PlayStation/cd drives you have to tune the potentiometer on the CD drive
+from its original position to 12-13 hours. It actually sort of looks like a clock. Remember the original
+position to not ruin anything. Use a precision screwdriver to tune the potentiometer.
+This will stress the laser in the CD drive more than it is in normal operation, and it will shorten its life.
+
+The trick to tuning the potentiometer correctly is burning an audio track on the CD-RW and playing the audio track
+in the PlayStation CD player. If the audio track plays smoothly enough, it will be able to read CD-RWs.
+
+You may need several tries before you succeed booting a disk, this happens due to the extensive read checks done
+by the PlayStation BIOS when booting a game.
+
+This is my (Giuseppe Gatta's) experience, and it might work much better on your PlayStation/PS cd drive
+or it might work much worse. PlayStation cd drives are very finicky, I myself have PlayStations which read
+like new and some which almost do not read at all. The CD drive is the lowest quality item inside
+a PlayStation.
+
+On the other hand this is the cheapest way to test things on your modded PlayStation.
 
 Q: I don't use double buffering in my program/game. Nothing is shown on the emulator but it displays fine
     on the real hardware. Where is the issue?
     
 A: You are using a buggy GPU plugin. If you're using version 1.0.16 of the P.E.Op.S SoftX Driver or most other
-    P.E.Op.S GPU plugins, update to P.E.Op.S SoftX Driver 1.0.18 and the problem should go away.
+P.E.Op.S GPU plugins, update to P.E.Op.S SoftX Driver 1.0.18 and the problem should go away.
 
 Q: What is a .PSF music file?
 
 A: A .PSF music file is in the Portable Sound Format which is used to store video game music data.
-    Actually the .PSF just contains a tiny bit of information data in its header and then a compressed executable
-    which can be executed by an emulator (or a video game console). A PSF player is just a stripped-down emulator,
-    which supports only the SPU and the executable inside the PSF is an executable hacked to play only music.
-    Originally it was meant only for the PlayStation but now there are music files in this platform-indipendent format
-    from many consoles. You can play a .psf music just by using your console or emulator. Use the psfex tool shipped
-    with the PSXSDK, extract the .exe from the PSF and then run the executable. 
-    More info here: http://www.neillcorlett.com/psf/
+Actually the .PSF just contains a tiny bit of information data in its header and then a compressed executable
+which can be executed by an emulator (or a video game console). A PSF player is just a stripped-down emulator,
+which supports only the SPU and the executable inside the PSF is an executable hacked to play only music.
+Originally it was meant only for the PlayStation but now there are music files in this platform-indipendent format
+from many consoles. You can play a .psf music just by using your console or emulator. Use the psfex tool shipped
+with the PSXSDK, extract the .exe from the PSF and then run the executable. 
+More info here: http://www.neillcorlett.com/psf/
+
+Q: Why are filenames limited to the MSDOS-like 8.3 naming convention?
+
+A: Because the ISO-9660 filesystem used on PlayStation CDs has the 8.3 limit for filenames.
+It is plain ISO-9660 without any extension like Joliet or Rock Ridge, which are commonly added on CDs meant
+to be read on computers to overcome the filename limit and to add new features.
+The PSXSDK can make use of TRANS.TBL files in the directories of your CD to emulate long filenames.
+TRANS.TBL is a normal text file which assigns long filenames to normal ISO9660 filenames.
+Its rows look like this:
+F SYSTEM.CNF;1		system.cnf
+
+What this row does is assign to long filename system.cnf the short filename SYSTEM.CNF;1
+'F' denotes that system.cnf is a file, otherwise 'D' denotes directories.
+
+Good ISO image making tools will support the automatic creation of a TRANS.TBL file for each directory at image creation.
+For instance, adding the -T parameter to your mkisofs command line makes mkisofs do just that.
+
+To make fopen() use long filenames you will have to use the cdromL: pseudo device instead of cdrom:
+Spaces are allowed in paths and both the slash and the back slash can be used to separate directories.
+Examples: cdromL:/Path To/My Filename , cdromL:\Path To\This Name
+
+There is a perfomance penalty when using long filenames because doing that requires reading the
+TRANS.TBL for every directory which is encountered.
+
+firstfile() does not support long filenames (yet) and open() does not support them, either.
+
+Q: I'm running <linux distribution> and audio doesn't work in PCSX!
+A: Many new Linux distributions are using PulseAudio. Run 'padsp pcsx' instead of 'pcsx'.
+
+Q: Why is this SDK called PSXSDK? The PSX is a DVR+PS2 hybrid released by Sony in Japan!
+A: Almost nobody knows about the Japanese PSX from 2004, and on top of that, it was a marketing flop.
+    Seriously, PSX ('PlayStation eXperimental') is the name the original PlayStation went by during      development and it continued being called like that later. The name stuck and it is here to stay.
+
+Q: Can I use UPX to pack an executable I made with PSXSDK?
+A: Sure, you can. Due to a technicality of elf2exe, you need to specify --force on the UPX command line.
+    It seems to work well, but I did no extensive testing, so it is at your own risk.
+
+Q: Why do programs not work on the ePSXe/pSX/... emulators?
+A: Despite popular belief, ePSXe and pSX are not as accurate as it is thought.
+    It is recommended to use PCSX Reloaded for testing.
+    The rule of thumb is that when something works fine on real hardware, and the
+    emulator freezes or does something unexpected, it's the emulator's fault.
 
 Written by Giuseppe Gatta
 E-mail: tails92@gmail.com

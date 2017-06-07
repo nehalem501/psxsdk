@@ -8,7 +8,7 @@ Some quirks might even be present only on some revisions of the PlayStation
 hardware, but the goal is that something has to run on every revision, and so
 one has to respect all the tips, regardless of model.
 So if you want to add something to the list, also specify the model it happens
-on.
+on. Do not forget to include your name or nickname.
 
 ALL MODELS:
 
@@ -28,6 +28,10 @@ before doing anything else.
 Why doesn't the SDK do this automatically? It is designed more or less to do what
 you want to do. If you want to somewhat exploit this quirk to make something nice,
 you can.
+
+You can also call GsSetAutoWait() after GsInit(), which removes the need
+for checking the result of the GsIsDrawing() function, and which makes GsDrawList()
+wait until completion.
 
 ********************************************************************
 
@@ -94,3 +98,39 @@ Audio streams for the PlayStation SPU are in an ADPCM format. There is no way to
 Response of the joystick when asking for pressed buttons (PSX_ReadPad()).
 It is unwise to read the pad too often and it is recommended to read it only 60 or 50 times a second (vblank/vsync period), because some joysticks will not be able to keep up, will report that no buttons are pressed and they will cause strange behavior in your program/game.
 An example of joystick that shows this problem is the Sony SCPH-1200, if probed too often some times it will report that no buttons are pressed even if some of its buttons are pressed. This does not seem to happen with some clone controllers which apparently can be probed more often.
+
+********************************************************************
+On textures, and parameters to specify their location (tpage, u and v):
+
+You musn't go outside the 256x256 area which starts at the origin of the texture page you are
+taking the texture from, otherwise drawing will not be correct.
+If using texture page 5 at 16-bit depth for instance, you can reference only data from texture pages
+5, 6, 7 and 8. At 8-bit depth only data from pages 5 and 6, and in 4-bit depth only data from page 5.
+
+********************************************************************
+Mirroring of the 2 megabytes of RAM on consumer PlayStations (not Net Yaroze or Debugging Stations):
+the 2 megabytes of RAM are normally accessible in the address range 0x8000000-0x801FFFFF, but this range
+is also mirrored (contains the same contents) in the range 0x80200000-0x803FFFFF, 0x80400000-0x805FFFFF and
+0x80600000-0x807FFFFF. Obviously the same is valid for 0x0.... (by removing the most significant bit), which is the same
+but accessing without using the cache. At least PCSX 1.5 emulates this behavior correctly.
+
+********************************************************************
+Not strictly a hardware problem, but Sony's implementation of firstfile() in the BIOS seems to have a serious bug.
+If you need to use the firstfile() call, then insert in your program the code shown below so that it runs before
+the first call to firstfile().
+
+--- CUT HERE ---
+
+// Open any existing file before calling firstfile() for the first time.
+// If before calling firstfile() for the first time, you have never called open() on an existing file before,
+// every subsequent read will fail but it will report that files are opened ok!
+// This bug happens at least with the SCPH1001 BIOS version.
+// We try to open PSX.EXE and SYSTEM.CNF, as one of them must exist in order to boot from CDROM.
+
+	f = fopen("cdrom:PSX.EXE;1", "rb");
+	fclose(f);
+	
+	f = fopen("cdrom:SYSTEM.CNF;1", "rb");
+	fclose(f);
+	
+--- CUT HERE ---

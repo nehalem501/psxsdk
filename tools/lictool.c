@@ -21,7 +21,7 @@ void display_usage()
 	"\n"
 	"Options:\n"
 	" -tmd=<file>      TMD file for boot logo\n"
-	"");
+	" -removelogo      Remove logo from license file\n");
 }
 
 int main(int argc, char *argv[])
@@ -73,6 +73,15 @@ int main(int argc, char *argv[])
 			
 				fclose(f);
 			}
+		}
+		else if(strncmp(argv[x], "-removelogo", 11) == 0)
+		{
+			z = 0x2E08;
+			
+			for(y = 0; y < 12; y++)
+				lic_buffer[z+y] = 0;
+			
+			lic_buffer[z] = 0x41;
 		}
 	}
 	

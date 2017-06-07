@@ -8,128 +8,208 @@
 /* Joypad functions */
 
 extern void PAD_init(unsigned long mode, unsigned long *pad_buf);
-extern int PAD_dr();
+extern int PAD_dr(void);
 
 /* ROM information functions */
 
-/* 
- * GetKernelDate() returns PSX kernel date in 0xYYYYMMDD BCD format.
+/** 
+ * Returns PSX kernel date.
+ * @return Kernel date n 0xYYYYMMDD BCD format.
  */
  
-unsigned long GetKernelDate();
+unsigned long GetKernelDate(void);
 
-/*
- * GetKernelRomVersion() returns a pointer to a zero-terminated
+/**
+ * Returns a pointer to a zero-terminated
  * string which contains the kernel ROM version.
+ * @return Pointer to a zero-terminated string which contains the kernel ROM version.
  */
 
-const char *GetKernelRomVersion();
+const char *GetKernelRomVersion(void);
 
-/*
- * GetSystemRomVersion() returns a pointer to a zero-terminated
+/**
+ * Returns a pointer to a zero-terminated
  * string which contains the system ROM version.
+ * @return Zero-terminated string which contains the system ROM version.
  */
 
-const char *GetSystemRomVersion();
+const char *GetSystemRomVersion(void);
 
-/*
+/**
  * GetRamSize() should return size of RAM in bytes.
  * It doesn't seem to work most times. On SCPH1001, it returns 0.
  * On SCPH1000, it returns 2 (which is the number of megabytes of RAM
  * the PSX has.)
+ * @return Size of RAM in bytes.
  */
 
-unsigned int GetRamSize();
+unsigned int GetRamSize(void);
 
 /* Interrupt/Exception functions */
 
 /*void Exception();*/
-void EnterCriticalSection();
-void ExitCriticalSection();
+
+/**
+ * Enters a critical section.
+ */
+
+void EnterCriticalSection(void);
+
+/**
+ * Exits a critical section.
+ */
+
+void ExitCriticalSection(void);
 
 void SysEnqIntRP(int index, unsigned int *buf);
 void SysDeqIntRP(int index, unsigned int *buf);
 
-void ResetEntryInt();
+void ResetEntryInt(void);
 
 
-
+/**
+ * Directory entry
+ */
 struct DIRENTRY
 {
-	char name[20]; // Filename
-	int attr; // Attributes
-	int size; // File size in bytes
-	struct DIRENTRY *next; // Pointer to next file entry
-	char system[8]; // System reserved
+	 /** Filename */
+	char name[20];
+	 /** Attributes */
+	unsigned int attr;
+	 /** File size in bytes */
+	int size;
+	 /** Pointer to next file entry */
+	struct DIRENTRY *next;
+	 /** System reserved */
+	unsigned char system[8];
 };
 
-/*
- * firstfile() gets information about the first file which
+/**
+ * Gets information about the first file which
  * matches the pattern. ? and * wildcards can be used.
  * Characters after * are ignored.
+ * @param name File name string
+ * @param dirent Pointer to a struct DIRENTRY object.
+ * @return dirent on success, NULL on failure. 
  */
 
-struct DIRENTRY *firstfile(char *name, struct DIRENTRY *dirent);
+struct DIRENTRY *firstfile(const char *name, struct DIRENTRY *dirent);
 
-/* 
- * get_file_size() gets the file size of the file named "name".
+/**
+ * Finds a file with the same conditions as the previous call to firstfile().
+ * If a corresponding file is found, file information is stored
+ * to the structure pointed to by dir.
+ *
+ * @param dir Pointer to a struct DIRENTRY object.
+ * @return dir on success, NULL on failure.
+ */
+
+struct DIRENTRY *nextfile(struct DIRENTRY *dir);
+
+/** 
+ * Gets the file size of the file named "name".
  * It is actually just a wrapper around firstfile.
- * It rounds the file size to the block size.
+ * It rounds the file size to the block size (2048).
+ * @param name FIle name string
+ * @return File size in bytes, rounded.
  */
 
-int get_file_size(char *name);
+int get_file_size(const char *name);
 
-/*
- * get_real_file_size() is like get_file_size() but doesn't round
+/**
+ * This function is like get_file_size() but doesn't round
  * the file size to the block size.
+ * @param name File name string
+ * @return File size in bytes, unrounded.
  */
  
-int get_real_file_size(char *name);
+int get_real_file_size(const char *name);
 
 void InitHeap(void *block , int size);
-void FlushCache();
-
-void SetVBlankHandler(void (*h)());
-void RemoveVBlankHandler();
+void FlushCache(void);
 
 void SetRCntHandler(void (*callback)(), int spec, unsigned short target);
+void RemoveRCntHandler(int spec);
 
-// OpenEvent() opens an event, and returns its identifier
-// Must be executed in a critical section
+/**
+ * Opens an event, and returns its identifier
+ * Must be executed in a critical section
+ * @param desc Numerical cause descriptor
+ * @param spec Numerical event type
+ * @param mode Numerical mode
+ * @param func Function pointer to callback function
+ * @return Numerical identifier for the event opened
+ */
 
 int OpenEvent(
 	int desc, // Cause descriptor
 	int spec, // Event type
 	int mode, // Mode
-	int *(*func)() // Pointer to callback function
+	int *(*func)(void) // Pointer to callback function
 );
 
-// EnableEvent() enables an event by its identifier returned by OpenEvent()
+/**
+ * Enables an event by its identifier returned by OpenEvent()
+ * @param event Numerical event identifier
+ * @return ???
+ */
 
 int EnableEvent(unsigned int event);
 
-// CloseEvent() closes and event by its identifier
+/**
+ * Closes an event by its identifier
+ * @param event Numerical event identifier
+ * @return ???
+ */
 
 int CloseEvent(unsigned int event);
 
-// DisableEvent() disables an event by its identifier
+/**
+ * Disables an event by its identifier
+ * @param event Numerical event identifier
+ * @return ???
+ */
 
 int DisableEvent(unsigned int event);
 
-// DeliverEvent() generates an event. This must be executed in a critical section.
-// If the event to deliver is set to generate an interrupt, the handler function is called.
+/**
+ * Generates an event. This must be executed in a critical section.
+ * If the event to deliver is set to generate an interrupt, the handler function is called.
+ * @param ev1 Numerical cause descriptor
+ * @param ev2 Numerical event class
+ * @return ???
+ */
 
 int DeliverEvent(unsigned int ev1, // Cause descriptor
 			  int ev2); // Event class
 			  
-// TestEvent() checks if the event specified by its identifier has occured
-// It returns 1 if the event has occured, 0 if it has not
+/**
+ * Checks if the event specified by its identifier has occured
+ * @param event Numerical event identifier
+ * @return 1 if the event has occured, 0 if it has not
+ */
 
 int TestEvent(unsigned int event);
 
-// WaitEvent() waits until the event specified by identifier occurs.
-// It returns 1 if it succeds, 0 if there is a failure.
+/**
+ * Waits until the event specified by identifier occurs.
+ * @param event Numerical event identifier
+ * @return 1 on success, 0 on failure.
+ */
 
 int WaitEvent(unsigned int event);
+
+/**
+ * Replaces the executable image in memory with the one
+ * contained in another executable file in PSX-EXE format.
+ * WARNING: Does not work right now.
+ * 
+ * Most likely you want PSX_RunExe()
+ * @param name Path name of PSX-EXE executable
+ * @param argc Number of arguments
+ * @param argv Pointer to an array of string pointers for each argument
+ */
+ 
+void LoadExec(char *name, int argc, char **argv);
 
 #endif

@@ -87,7 +87,7 @@ enum
 	SPRINTF_SIZE_LONG_LONG,
 };
 
-unsigned int get_arg_in_size(int size, unsigned long long *arg, unsigned int check_sign)
+static unsigned int get_arg_in_size(int size, unsigned long long *arg, unsigned int check_sign)
 {
 	int s = 0;
 
@@ -152,17 +152,7 @@ unsigned int get_arg_in_size(int size, unsigned long long *arg, unsigned int che
 	return s;
 }	
 
-int put_in_string(char *string, unsigned int sz, char c, int pos)
-{
-	if(pos>=sz)
-		return 0;
-	else
-		string[pos] = c;
-		
-	return 1;
-}
-
-int libc_ulltoa(unsigned long long i, char *dst, int n)
+static int libc_ulltoa(unsigned long long i, char *dst, int n, int nopad)
 {
 	int x, y;
 	unsigned long long a, b;
@@ -170,7 +160,10 @@ int libc_ulltoa(unsigned long long i, char *dst, int n)
 	int sp=0;
 	int n2=0;
 
-	for(x=20;x>=0;x--)
+	if(n<=0)
+		return 0;
+
+	for(x=18;x>=0;x--)
 	{
 		a = 1;
 		for(y = 0; y<x; y++)
@@ -181,12 +174,12 @@ int libc_ulltoa(unsigned long long i, char *dst, int n)
 		if(b>=1)
 			empty_digit = 0;
 						
-		if(empty_digit == 0 || x == 0)
+		if(empty_digit == 0 || x == 0 || nopad == 1)
 		{	
 			i -= b*a;
 						
 			//put_in_string(string, ssz, b + '0', string_pos++);
-			if(n2!=n)
+			if(n2!=(n-1))
 			{
 				//printf("n2=%d\n",n2);
 				dst[sp++] = b + '0';
@@ -195,12 +188,12 @@ int libc_ulltoa(unsigned long long i, char *dst, int n)
 		}
 	}
 
-	if(n2!=n)dst[sp] = 0;
+	dst[sp] = 0;
 
 	return n2;
 }
 
-void libc_float_to_string(float fl, char *dst, int n)
+/*static void libc_float_to_string(float fl, char *dst, int n)
 {
 	unsigned int *p = (unsigned int*)&fl;
 	unsigned long long i = 0;
@@ -254,41 +247,41 @@ void libc_float_to_string(float fl, char *dst, int n)
 			e--;
 		}
 
-		if(s && n)
+		if(s && (n>0))
 		{
 			*(dst++) = '-';
 			n--;
 		}
 
-		x = libc_ulltoa(i, dst, n);
-		n-=x;
+		x = libc_ulltoa(i, dst, n, 0);
+		n-=x+1;
 		dst+=x;
 
-		if(n)
+		if(n>0)
 		{
 			*(dst++) = '.';
 			n--;
-			if(n)
+			if(n>0)
 			{
-				x = libc_ulltoa(f, dst, n<6?n:6);
+				x = libc_ulltoa(f, dst, n<6?n:6, 1);
 				n-=x;
 				dst+=x;
 
-				if(n)
+				if(n>0)
 					*dst=0;
 			}
 		}
 	}
-}
+}*/
 
-void libc_double_to_string(double fl, char *dst, int n)
+static void libc_double_to_string(double fl, char *dst, int n, int prec)
 {
 	unsigned long long *p = (unsigned long long *)&fl;
 	unsigned long long i = 0;
 	unsigned long long f = 0;
 	unsigned long long m, s;
 	long long e;
-	int x, y;
+	int x;
 	unsigned long long z;
 	
 	s = *p >> 63;
@@ -335,37 +328,38 @@ void libc_double_to_string(double fl, char *dst, int n)
 			e--;
 		}
 
-		if(s && n)
+		if(s && (n>0))
 		{
 			*(dst++) = '-';
 			n--;
 		}
 
-		x = libc_ulltoa(i, dst, n);
-		n-=x;
+		x = libc_ulltoa(i, dst, n, 0);
+		n-=x+1;
 		dst+=x;
 
-		if(n)
+		dprintf("N = %d\n", n);
+
+		if(n>0)
 		{
 			*(dst++) = '.';
-			n--;
-			if(n)
-				libc_ulltoa(f, dst, n<6?n:6);
+
+			if(n>0)
+				libc_ulltoa(f, dst, (n<(prec+1))?n:(prec+1), 1);
 		}
 	}
 }
 
-char libc_sprintf_floatbuf[64];
+static char libc_sprintf_floatbuf[64];
 
-int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
+static int __vsnprintf_internal(char *string, size_t size, const char *fmt, va_list ap, int (put_in_string(char *string, unsigned int sz, char c, int pos)))
 {
 	int string_pos,fmt_pos;
 	int l;
 	unsigned long long arg;
-	unsigned char *argcp;
-	unsigned char *argcp_tmp;
+	char *argcp;
+	char *argcp_tmp;
 	int directive_coming = 0;
-	int alternate_form = 0;
 	int flags = 0;
 	int argsize = 2; // int
 	int x, y;
@@ -374,7 +368,11 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 	int ssz = size - 1;
 	int zero_flag_imp = 0;
 	int pad_quantity = 0;
+	int pad_quantity_f = -1;
 	int last;
+
+	if(size == 0)
+		ssz = 0;
 	
 	l = strlen(fmt);
 	
@@ -427,6 +425,10 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 				
 					flags |= SPRINTF_NEGFIELD_FLAG;
 				break;
+				case '.': // Floating point precision
+					pad_quantity_f = pad_quantity;
+					pad_quantity = 0;
+				break;
 				case 'h': // Half argument size
 					if(argsize) argsize--;
 				break;
@@ -434,6 +436,26 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 					if(argsize < 2) argsize = 2;
 					else if(argsize < SPRINTF_SIZE_LONG_LONG) argsize++;
 				break;
+				
+// 'j', 't', 'z', 'q' added 2013-10-26 by nextvolume				
+				
+				case 'j': // Maximum integer size
+					argsize = SPRINTF_SIZE_LONG_LONG;
+				break;
+				
+				case 't': // Size of ptrdiff_t (i.e. long on 32-bit, long long on 64-bit)
+					argsize = (sizeof(void*)==8)?
+								SPRINTF_SIZE_LONG_LONG:SPRINTF_SIZE_LONG;
+				break;
+				
+				case 'z': // Size of size_t (int)
+					argsize = SPRINTF_SIZE_INT;
+				break;
+				
+				case 'q': // Size of quad_t
+					argsize = SPRINTF_SIZE_LONG_LONG;
+				break;
+				
 				case 'd': // signed decimal
 				case 'i':
 					empty_digit = 1;
@@ -445,6 +467,9 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 					else
 						arg = va_arg(ap, unsigned long long);
 
+					if(flags & SPRINTF_SPACE_FLAG)
+						put_in_string(string, ssz, ' ', string_pos++);
+					
 					if(get_arg_in_size(argsize, &arg, 1))
 					{
 						put_in_string(string, ssz, '-', string_pos++);
@@ -660,6 +685,7 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 					while(*argcp)
 					{
 						put_in_string(string, ssz, *argcp, string_pos++);
+
 						argcp++;
 					}
 					
@@ -720,10 +746,28 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 				break;
 
 				case 'f':
-					libc_double_to_string(va_arg(ap, double), libc_sprintf_floatbuf, 64);
+					if(pad_quantity_f == -1)
+						pad_quantity_f = 6;
+					else
+					{
+						x = pad_quantity_f;
+						pad_quantity_f = pad_quantity;
+						pad_quantity = x;
+					}
+
+					dprintf("PRECISION = %d\n", pad_quantity_f);
+
+					libc_double_to_string(va_arg(ap, double), libc_sprintf_floatbuf, 64, pad_quantity_f);
 					
+					// calculate padding
+					pad_quantity -= strlen(libc_sprintf_floatbuf);
+					
+					write_padding();
+
 					for(x=0;libc_sprintf_floatbuf[x]!=0;x++)
 						put_in_string(string, ssz, libc_sprintf_floatbuf[x], string_pos++);
+
+					write_neg_padding();
 
 					directive_coming = 0;
 				break;
@@ -732,7 +776,10 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 					
 					directive_coming = 0;
 				break;
-			//	default
+			
+				default:
+					put_in_string(string, ssz, fmt[fmt_pos], string_pos++);
+					directive_coming = 0;
 			}
 		}
 		else
@@ -743,22 +790,70 @@ int vsnprintf(char *string, unsigned int size, char *fmt, va_list ap)
 				flags = 0;
 				argsize = 2;
 				pad_quantity = 0;
+				pad_quantity_f = -1;
 				zero_flag_imp = 0;
 			}
 			else
+			{
 				put_in_string(string, ssz, fmt[fmt_pos], string_pos++);
+			}
 		}	
 	}
-	string[string_pos] = 0;
-	return string_pos;	
+
+	/*if(((size-1) < string_pos) && (size>0))
+		string[size - 1] = 0;
+	else
+		string[string_pos] = 0;*/
+	put_in_string(string, ssz, '\0', string_pos);
+
+	return string_pos;
 }
 
-int vsprintf(char *string, char *fmt, va_list ap)
+static int vsnprintf_put_in_string(char *string, unsigned int sz, char c, int pos)
+{
+	if(pos>=sz)
+		return 0;
+	else
+		string[pos] = c;
+		
+	return 1;
+}
+
+int vsnprintf(char *string, size_t size, const char *fmt, va_list ap)
+{
+	return __vsnprintf_internal(string, size, fmt, ap, vsnprintf_put_in_string);
+}
+
+static int sio_put_in_string(char *string, unsigned int sz, char c, int pos)
+{
+	sio_putchar(c);
+	
+	return 1;
+}
+
+int sio_vprintf(const char *fmt, va_list ap)
+{
+	return __vsnprintf_internal(NULL, -1, fmt, ap, sio_put_in_string);
+}
+
+static int out_put_in_string(char *string, unsigned int sz, char c, int pos)
+{
+	putchar(c);
+	
+	return 1;
+}
+
+int vprintf(char *fmt, va_list ap)
+{
+	return __vsnprintf_internal(NULL, -1, fmt, ap, out_put_in_string);
+}
+
+int vsprintf(char *string, const char *fmt, va_list ap)
 {
 	return vsnprintf(string, 0xffffffff, fmt, ap);
 }
 
-int sprintf(char *string, char *fmt, ...)
+int sprintf(char *string, const char *fmt, ...)
 {
 	int r;
 
@@ -773,7 +868,7 @@ int sprintf(char *string, char *fmt, ...)
 	return r;
 }
 
-int snprintf(char *string, unsigned int size, char *fmt, ...)
+int snprintf(char *string, size_t size, const char *fmt, ...)
 {
 	int r;
 
@@ -782,6 +877,21 @@ int snprintf(char *string, unsigned int size, char *fmt, ...)
 	va_start(ap, fmt);
 
 	r = vsnprintf(string, size, fmt, ap);
+	
+	va_end(ap);
+	
+	return r;
+}
+
+int sio_printf(const char *fmt, ...)
+{
+	int r;
+
+	va_list ap;
+
+	va_start(ap, fmt);
+
+	r = sio_vprintf(fmt, ap);
 	
 	va_end(ap);
 	

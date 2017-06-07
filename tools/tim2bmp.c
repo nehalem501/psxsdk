@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <zlib.h>
 
 #define PCSX_1_5_SAVESTATE_SUPPORT
@@ -32,12 +33,21 @@ tim2bmp_info	tim_info;
 
 #include "endian.c"
 
+int mpink_flag = 0;
+
 void rgbpsx_to_rgb24(unsigned short psx_c, unsigned char *r, 
 	unsigned char *g, unsigned char *b)
 {
 	*r = (psx_c & 31) << 3;
 	*g = ((psx_c >> 5)&31) << 3;
 	*b = ((psx_c >> 10) &31) << 3;
+
+	if(mpink_flag && !(psx_c & 0x8000) && *r == 0 && *g == 0 && *b == 0)
+	{
+		*r = 255;
+		*g = 0;
+		*b = 255;
+	}
 }
 
 // Returns number of bytes to round image row with.
@@ -115,8 +125,8 @@ int tim2bmp_read_tim(char *ip, tim2bmp_info *t)
 {
 	int tim_pmode;
 	//int tim_w, tim_h;
-	int tim_x, tim_y, tim_cx, tim_cy, tim_cw, tim_ch;
-	int bl;
+	int /* tim_x, tim_y, tim_cx, tim_cy, */ tim_cw, tim_ch;
+	//int bl;
 	int x;
 	FILE *i = fopen(ip, "rb");
 	
@@ -140,9 +150,9 @@ int tim2bmp_read_tim(char *ip, tim2bmp_info *t)
 	if(t->has_clut)
 	{
 		t->clut_off = 8;
-		bl = read_le_dword(i);
-		tim_cx = read_le_word(i);
-		tim_cy = read_le_word(i);
+		/* bl = */ read_le_dword(i);
+		/* tim_cx = */ read_le_word(i);
+		/* tim_cy = */ read_le_word(i);
 		tim_cw = read_le_word(i);
 		tim_ch = read_le_word(i);
 		
@@ -152,12 +162,12 @@ int tim2bmp_read_tim(char *ip, tim2bmp_info *t)
 			t->clut[x] = read_le_word(i);		
 	}
 	
-	bl = read_le_dword(i);
+	/* bl = */ read_le_dword(i);
 	
 	// Read framebuffer X,Y coordinates
 	
-	tim_x = read_le_word(i); 
-	tim_y = read_le_word(i);
+	/* tim_x = */ read_le_word(i); 
+	/* tim_y = */ read_le_word(i);
 	
 	// Read width and height
 	t->w = read_le_word(i); // Fix this for 4bpp and 8bpp images !
@@ -317,6 +327,7 @@ void tim2bmp_convert_image_data(char *ip, char *fp, tim2bmp_info *t)
 int main(int argc, char *argv[])
 {
 	//int x, y;
+	int x;
 	FILE *i;
 	//int bl;
 	/*int tim_w, tim_h, tim_x, tim_y, tim_cx, tim_cy, tim_cw, tim_ch;
@@ -339,6 +350,7 @@ int main(int argc, char *argv[])
 		printf("\n");
 		printf("Options:\n");
 		printf("  -o=<offset>\n");
+		printf("  -mpink - Convert transparency to magic pink\n");
 		printf("\n");
 		return -1;
 	}
@@ -350,6 +362,12 @@ int main(int argc, char *argv[])
 	r = deflateInit(&strm, 1);*/
 	//printf("r = %d, Z_OK = %d\n", r, Z_OK);
 	
+	for(x = 3; x < argc; x++)
+	{
+		if(strcmp(argv[x], "-mpink") == 0)
+			mpink_flag = 1;
+	}
+
 	i = fopen(argv[1], "rb");
 	
 	if(i == NULL)

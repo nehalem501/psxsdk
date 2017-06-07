@@ -160,7 +160,7 @@ void DestroyTree(struct TreeNode *ptr) {
 //////////////////////////////////////////////////////////////////////////
 void CreateTree() {
 	struct TreeNode *ptr;
-	struct TreeNode *trees[256];
+	struct TreeNode *trees[257];
 	int x, y;
 
 	for(x = 0; x < tableSize; x++) {
@@ -331,7 +331,7 @@ void Decompress() {
 	unsigned long mask, maskSize;
 	unsigned char ch;
 	int offset;
-	int last;
+//	int last;
 
 	int ib, ob;
 
@@ -374,7 +374,7 @@ void Decompress() {
 	maskSize = 0;
 	mask = 0;
 	offset = 7;
-	last = 0;
+//	last = 0;
 	y = 0;
 	x = 0;
 	ib = BUFFER_SIZE;
@@ -486,7 +486,7 @@ int main(int argc, char **argv) {
 	}
 
 	if(!inFile) {
-		inFile = fopen(inName, "r");
+		inFile = fopen(inName, "rb");
 		if(!inFile) {
 			printf("error: could not open input\n");
 			exit(1);
@@ -523,7 +523,7 @@ int main(int argc, char **argv) {
 	}
 
 	if(!outFile) {
-		outFile = fopen(outName, "w");
+		outFile = fopen(outName, "wb");
 		if(!outFile) {
 			printf("error: could not open output\n");
 			exit(1);

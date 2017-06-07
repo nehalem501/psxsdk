@@ -55,16 +55,15 @@ int vsscanf(const char *str, const char *format, va_list ap)
 	int sp = 0;
 	int conv = 0;
 	int sz = scanf_s_int; // size for numbers defaults to 32-bit
-	int i,x,y,z, h;
+	int i,x,y,z;// h;
 	int suppress = 0;
-	int neg = 0;
+//	int neg = 0;
 	int fsz = 512;
 	int def_fsz = 1;
 	int exspace = 0;
-	int alt = 0;
+//	int alt = 0;
 	int r = 0;
 	int exit_loop=0;
-	int sp2,sp3;
 	char *ep;
 	long long buf;
 	double fbuf;
@@ -97,7 +96,7 @@ int vsscanf(const char *str, const char *format, va_list ap)
 				break;
 
 				case '#': // Alternate format
-					alt = 1;
+					//alt = 1;
 				break;
 
 				case '0' ... '9': // '0' ... '9' is a GNU C extension!
@@ -272,7 +271,7 @@ int vsscanf(const char *str, const char *format, va_list ap)
 				case '[':
 					i=0;
 					x=0; // Exclusion?
-					h=0; // Hyphen?
+					//h=0; // Hyphen?
 
 					fp++;
 					i++;
@@ -309,7 +308,7 @@ int vsscanf(const char *str, const char *format, va_list ap)
 							if(y == 1)
 							{
 								if(format[fp] < format[fp-2])
-									libc_vsscanf_allow[format[fp]] = x^1;
+									libc_vsscanf_allow[(unsigned char)format[fp]] = x^1;
 								else
 									for(z = format[fp-2]; z <= format[fp]; z++)
 										libc_vsscanf_allow[z] = x^1;
@@ -319,7 +318,7 @@ int vsscanf(const char *str, const char *format, va_list ap)
 								//printf("%s all chars from %c to %c\n", x?"Excluding":"Including",format[fp-2], format[fp]);
 							}
 							else
-								libc_vsscanf_allow[format[fp]] = x^1;
+								libc_vsscanf_allow[(unsigned char)format[fp]] = x^1;
 						}
 
 						fp++;
@@ -342,7 +341,7 @@ int vsscanf(const char *str, const char *format, va_list ap)
         */
 					i = 0;
 
-					while(libc_vsscanf_allow[str[sp]] && i<512)
+					while(libc_vsscanf_allow[(unsigned char)str[sp]] && i<512)
 						libc_vsscanf_buf[i++] = str[sp++];
 					
 					libc_vsscanf_buf[i] = 0;
@@ -386,14 +385,14 @@ int vsscanf(const char *str, const char *format, va_list ap)
 		{
 			if(format[fp] == '%')
 			{
-				conv = 1;
-				neg = 0;
+			//	conv = 1;
+		//		neg = 0;
 				suppress = 0;
 				sz = scanf_s_int;
 				fsz = 512;
 				def_fsz = 1;
 				exspace = 0;
-				alt = 0;
+		//		alt = 0;
 				bzero(libc_vsscanf_allow, 256);
 				//chset = 0;
 			}

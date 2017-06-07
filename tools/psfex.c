@@ -21,7 +21,6 @@ int main(int argc, char *argv[])
 {
 	FILE *f;
 	unsigned char *fm;
-	unsigned int i;
 	unsigned int res_size;
 	unsigned int cprg_size;
 	unsigned int cprg_crc32;
@@ -87,7 +86,7 @@ int main(int argc, char *argv[])
 	dest_len = 0x200000;
 	uncompress(om, &dest_len, &fm[16 + res_size], cprg_size);
 	
-	printf("Real destination length: %d\n", dest_len);
+	printf("Real destination length: %ld\n", dest_len);
 	
 /*
  * Now let's write the decompressed program to the output file
@@ -96,7 +95,7 @@ int main(int argc, char *argv[])
 	
 	if(f == NULL)
 	{
-		printf("Could not open %s for writing. Aborting.\n");
+		printf("Could not open %s for writing. Aborting.\n", argv[2]);
 		return -1;
 	}
 	

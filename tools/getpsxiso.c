@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 	{
 		fread(buf, sizeof(char), 2352, i);
 		fwrite(buf + 24, sizeof(char), 2048, o);
-		printf("Sector %d/%d written\r", x, s);
+		printf("Sector %d/%d written\r", x+1, s);
 	}
 	
 	printf("\n");
